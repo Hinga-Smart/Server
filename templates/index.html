@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Moisture Sensor Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f7f9fb;
+      margin: 20px;
+      text-align: center;
+    }
+    h1 {
+      color: #2c3e50;
+    }
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin: 1rem 0;
+    }
+    .card {
+      background: #fff;
+      padding: 1rem 2rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      min-width: 150px;
+    }
+    canvas {
+      max-width: 900px;
+      margin: 30px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    a {
+      text-decoration: none;
+      color: #3498db;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌱 Moisture Sensor Analytics Dashboard</h1>
+  <div class="stats">
+    <div class="card">
+      <h3>Latest Moisture</h3>
+      <p id="latestMoisture">--</p>
+    </div>
+    <div class="card">
+      <h3>State</h3>
+      <p id="latestState">--</p>
+    </div>
+    <div class="card">
+      <h3>Timestamp</h3>
+      <p id="latestTime">--</p>
+    </div>
+  </div>
+
+  <canvas id="moistureChart"></canvas>
+
+  <p>
+    <a href="/download">⬇️ Download Data (Excel)</a> |
+    <a href="/latest">📦 View Latest JSON</a>
+  </p>
+
+  <script>
+    const initialData = {{ data|tojson }};
+    let chart;
+
+    function renderChart(data) {
+      const labels = data.map(r => r.Timestamp);
+      const values = data.map(r => Number(r.Moisture));
+
+      const ctx = document.getElementById('moistureChart').getContext('2d');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Moisture Level',
+            data: values,
+            borderColor: '#2ecc71',
+            backgroundColor: 'rgba(46, 204, 113, 0.2)',
+            borderWidth: 2,
+            pointRadius: 2,
+            tension: 0.2
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: { x: { title: { display: true, text: 'Time' } },
+                    y: { title: { display: true, text: 'Moisture Value' } } }
+        }
+      });
+    }
+
+    function updateLatest(latest) {
+      document.getElementById("latestMoisture").textContent = latest.Moisture;
+      document.getElementById("latestState").textContent = latest.State;
+      document.getElementById("latestTime").textContent = latest.Timestamp;
+    }
+
+    // Initial render
+    renderChart(initialData);
+    updateLatest(initialData[initialData.length - 1] || {});
+
+    // Auto refresh every 30 seconds
+    setInterval(async () => {
+      const res = await fetch('/latest');
+      if (res.ok) {
+        const latest = await res.json();
+        updateLatest(latest);
+      }
+
+      const resAll = await fetch('/data');
+      if (resAll.ok) {
+        const data = await resAll.json();
+        renderChart(data);
+      }
+    }, 30000);
+  </script>
+</body>
+</html>
