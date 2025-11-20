@@ -10,25 +10,25 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-log_file = "error_log.txt"
 DRY_THRESHOLD = 300
 WET_THRESHOLD = 700
 
 # --- Utilities ---
 def log_error(message):
-    with open(log_file, "a") as f:
-        f.write(f"[{datetime.utcnow().isoformat()}] {message}\n")
+    # Vercel is serverless; print logs instead of writing to a file
+    print("[ERROR]", message)
 
 def get_state(moisture):
-    if moisture < DRY_THRESHOLD: return "DRY"
-    elif moisture > WET_THRESHOLD: return "WET"
-    else: return "MODERATE"
+    if moisture < DRY_THRESHOLD:
+        return "DRY"
+    elif moisture > WET_THRESHOLD:
+        return "WET"
+    else:
+        return "MODERATE"
 
 # --- Sensor Routes ---
-
 @app.route('/sensor/add', methods=['POST'])
 def add_sensor():
-    """Add a new sensor"""
     try:
         data = request.get_json(force=True)
         sensor_id = data.get("sensor_id")
@@ -52,13 +52,12 @@ def add_sensor():
 
         return {"status": "Sensor added successfully"}
 
-    except Exception as e:
+    except Exception:
         log_error(traceback.format_exc())
         return {"status": "Server error"}, 500
 
 @app.route('/sensor/update/<int:sensor_id>', methods=['PUT'])
 def update_sensor(sensor_id):
-    """Update sensor metadata"""
     try:
         data = request.get_json(force=True)
         update_data = {k: v for k, v in data.items() if k in ["sensor_name", "location", "active"]}
@@ -68,25 +67,22 @@ def update_sensor(sensor_id):
         supabase.table("sensors").update(update_data).eq("sensor_id", sensor_id).execute()
         return {"status": "Sensor updated successfully"}
 
-    except Exception as e:
+    except Exception:
         log_error(traceback.format_exc())
         return {"status": "Server error"}, 500
 
 @app.route('/sensors', methods=['GET'])
 def get_sensors():
-    """Get all sensors"""
     try:
-        res = supabase.table("sensors").select("*").order("sensor_id", asc=True).execute()
+        res = supabase.table("sensors").select("*").order("sensor_id", "asc").execute()
         return jsonify(res.data)
-    except Exception as e:
+    except Exception:
         log_error(traceback.format_exc())
         return jsonify([])
 
 # --- Moisture Data Routes ---
-
 @app.route('/data', methods=['POST'])
 def sensor_data():
-    """Receive moisture data"""
     try:
         results = request.get_json(force=True)
         if 'sensor_id' not in results or 'moisture' not in results:
@@ -113,36 +109,34 @@ def sensor_data():
         supabase.table("moisture_records").insert(data).execute()
         return {"status": "Data recorded successfully"}
 
-    except Exception as e:
+    except Exception:
         log_error(traceback.format_exc())
         return {"status": "Server error"}, 500
 
 @app.route('/latest', methods=['GET'])
 def latest_data():
-    """Return latest reading; optional ?sensor_id"""
     try:
         sensor_id = request.args.get("sensor_id")
-        query = supabase.table("moisture_records").select("*").order("timestamp", desc=True).limit(1)
+        query = supabase.table("moisture_records").select("*").order("timestamp", "desc").limit(1)
         if sensor_id:
             query = query.eq("sensor_id", int(sensor_id))
         res = query.execute()
         data = res.data[0] if res.data else {}
         return jsonify(data)
-    except Exception as e:
+    except Exception:
         log_error(traceback.format_exc())
         return jsonify({})
 
 @app.route('/all', methods=['GET'])
 def all_data():
-    """Return all readings; optional ?sensor_id"""
     try:
         sensor_id = request.args.get("sensor_id")
-        query = supabase.table("moisture_records").select("*").order("timestamp", asc=True)
+        query = supabase.table("moisture_records").select("*").order("timestamp", "asc")
         if sensor_id:
             query = query.eq("sensor_id", int(sensor_id))
         res = query.execute()
         return jsonify(res.data)
-    except Exception as e:
+    except Exception:
         log_error(traceback.format_exc())
         return jsonify([])
 
