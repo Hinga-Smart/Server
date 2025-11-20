@@ -1,2 +1,4 @@
-Flask
-openpyxl
+flask
+supabase
+python-dotenv
+werkzeug
