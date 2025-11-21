@@ -1,5 +1,6 @@
 flask
 supabase
+werkzeug
+flasgger
+pyyaml
 python-dotenv
-requests
-pydantic
