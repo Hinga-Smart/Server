@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from supabase import create_client, Client
 from datetime import datetime
 import os, traceback
@@ -14,9 +14,116 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 DRY_THRESHOLD = 300
 WET_THRESHOLD = 700
 
-# --- Utilities ---
+# ----- Swagger/OpenAPI -----
+OPENAPI_DOC = {
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Smart Irrigation API",
+        "version": "1.0.0",
+        "description": "API documentation for moisture monitoring + sensor management."
+    },
+    "paths": {
+        "/sensor/add": {
+            "post": {
+                "summary": "Add a new sensor",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "sensor_id": {"type": "integer"},
+                                    "sensor_name": {"type": "string"},
+                                    "location": {"type": "string"}
+                                },
+                                "required": ["sensor_id", "sensor_name"]
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "Sensor added"}}
+            }
+        },
+
+        "/sensor/update/{sensor_id}": {
+            "put": {
+                "summary": "Update sensor details",
+                "parameters": [{
+                    "name": "sensor_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "integer"}
+                }],
+                "responses": {"200": {"description": "Sensor updated"}}
+            }
+        },
+
+        "/sensors": {
+            "get": {
+                "summary": "Get all sensors",
+                "responses": {"200": {"description": "List of sensors"}}
+            }
+        },
+
+        "/data": {
+            "post": {
+                "summary": "Submit moisture reading",
+                "responses": {"200": {"description": "Reading recorded"}}
+            }
+        },
+
+        "/latest": {
+            "get": {
+                "summary": "Get latest moisture reading",
+                "responses": {"200": {"description": "Latest reading"}}
+            }
+        },
+
+        "/all": {
+            "get": {
+                "summary": "Get all moisture readings",
+                "responses": {"200": {"description": "All readings"}}
+            }
+        }
+    }
+}
+
+
+@app.route("/")
+def swagger_ui():
+    """Shows Swagger UI when user opens base URL."""
+
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Smart Irrigation API Docs</title>
+        <link rel="stylesheet"
+              href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">
+    </head>
+    <body>
+        <div id="swagger-ui"></div>
+
+        <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+        <script>
+            SwaggerUIBundle({
+                url: '/openapi.json',
+                dom_id: '#swagger-ui'
+            });
+        </script>
+    </body>
+    </html>
+    """
+
+
+@app.route("/openapi.json")
+def openapi_spec():
+    return jsonify(OPENAPI_DOC)
+
+
+# --- Helpers ---
 def log_error(message):
-    # Vercel filesystem is read-only → log to console
     print("[ERROR]", message)
 
 def get_state(moisture):
@@ -24,8 +131,7 @@ def get_state(moisture):
         return "DRY"
     elif moisture > WET_THRESHOLD:
         return "WET"
-    else:
-        return "MODERATE"
+    return "MODERATE"
 
 
 # ---------------------------
@@ -40,10 +146,10 @@ def add_sensor():
         sensor_name = data.get("sensor_name")
         location = data.get("location", "")
 
-        if sensor_id is None or sensor_name is None:
+        if not sensor_id or not sensor_name:
             return {"status": "sensor_id and sensor_name required"}, 400
 
-        # Check if sensor exists
+        # Check if exists
         exists = supabase.table("sensors").select("*").eq("sensor_id", sensor_id).execute()
         if exists.data:
             return {"status": "Sensor already exists"}, 400
@@ -56,7 +162,7 @@ def add_sensor():
             "active": True
         }).execute()
 
-        return {"status": "Sensor added successfully"}
+        return {"status": "Sensor added"}
 
     except Exception:
         log_error(traceback.format_exc())
@@ -69,11 +175,8 @@ def update_sensor(sensor_id):
         data = request.get_json(force=True)
         update_data = {k: v for k, v in data.items() if k in ["sensor_name", "location", "active"]}
 
-        if not update_data:
-            return {"status": "No valid fields to update"}, 400
-
         supabase.table("sensors").update(update_data).eq("sensor_id", sensor_id).execute()
-        return {"status": "Sensor updated successfully"}
+        return {"status": "Sensor updated"}
 
     except Exception:
         log_error(traceback.format_exc())
@@ -83,7 +186,6 @@ def update_sensor(sensor_id):
 @app.route('/sensors', methods=['GET'])
 def get_sensors():
     try:
-        # Correct order syntax for Supabase Python client
         res = supabase.table("sensors").select("*").order("sensor_id", "asc").execute()
         return jsonify(res.data)
     except Exception:
@@ -92,7 +194,7 @@ def get_sensors():
 
 
 # ---------------------------
-#     MOISTURE DATA ROUTES
+#     MOISTURE ROUTES
 # ---------------------------
 
 @app.route('/data', methods=['POST'])
@@ -106,22 +208,21 @@ def sensor_data():
         sensor_id = int(body["sensor_id"])
         moisture = int(body["moisture"])
 
-        # Validate sensor exists & active
         sensor = supabase.table("sensors").select("*") \
             .eq("sensor_id", sensor_id).eq("active", True).execute()
 
         if not sensor.data:
             return {"status": "Invalid or inactive sensor_id"}, 400
 
-        record = {
+        rec = {
             "sensor_id": sensor_id,
             "moisture": moisture,
             "state": get_state(moisture),
             "timestamp": datetime.utcnow().isoformat()
         }
 
-        supabase.table("moisture_records").insert(record).execute()
-        return {"status": "Data recorded successfully"}
+        supabase.table("moisture_records").insert(rec).execute()
+        return {"status": "Data recorded"}
 
     except Exception:
         log_error(traceback.format_exc())
@@ -131,17 +232,12 @@ def sensor_data():
 @app.route('/latest', methods=['GET'])
 def latest_data():
     try:
-        sensor_id = request.args.get("sensor_id")
-
-        query = supabase.table("moisture_records").select("*") \
-            .order("timestamp", "desc").limit(1)
-
-        if sensor_id:
-            query = query.eq("sensor_id", int(sensor_id))
-
-        res = query.execute()
+        sid = request.args.get("sensor_id")
+        q = supabase.table("moisture_records").select("*").order("timestamp", "desc").limit(1)
+        if sid:
+            q = q.eq("sensor_id", int(sid))
+        res = q.execute()
         return jsonify(res.data[0] if res.data else {})
-
     except Exception:
         log_error(traceback.format_exc())
         return jsonify({})
@@ -150,23 +246,17 @@ def latest_data():
 @app.route('/all', methods=['GET'])
 def all_data():
     try:
-        sensor_id = request.args.get("sensor_id")
-
-        query = supabase.table("moisture_records").select("*") \
-            .order("timestamp", "asc")
-
-        if sensor_id:
-            query = query.eq("sensor_id", int(sensor_id))
-
-        res = query.execute()
+        sid = request.args.get("sensor_id")
+        q = supabase.table("moisture_records").select("*").order("timestamp", "asc")
+        if sid:
+            q = q.eq("sensor_id", int(sid))
+        res = q.execute()
         return jsonify(res.data)
-
     except Exception:
         log_error(traceback.format_exc())
         return jsonify([])
 
 
-# --- Local Dev Only ---
+# Local dev
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 1000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)
