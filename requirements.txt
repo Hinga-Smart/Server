@@ -4,3 +4,4 @@ werkzeug
 flasgger
 pyyaml
 python-dotenv
+flask-cors

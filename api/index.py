@@ -1,9 +1,14 @@
 from flask import Flask, request, jsonify
 from supabase import create_client, Client
 from datetime import datetime
+from flask_cors import CORS
 import os, traceback
 
 app = Flask(__name__)
+
+# --- Enable CORS using frontend URL from env ---
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "*")  # fallback "*" if not set
+CORS(app, origins=[FRONTEND_URL])
 
 # --- Supabase Client ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -15,147 +20,19 @@ DRY_THRESHOLD = 300
 WET_THRESHOLD = 700
 
 # ----- Swagger/OpenAPI -----
-OPENAPI_DOC = {
-    "openapi": "3.0.0",
-    "info": {
-        "title": "Smart Irrigation API",
-        "version": "1.0.1",
-        "description": "API documentation for moisture monitoring + sensor management with Try-It-Out support."
-    },
-    "paths": {
-        "/sensor/add": {
-            "post": {
-                "summary": "Add a new sensor",
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "sensor_id": {"type": "integer", "example": 1},
-                                    "sensor_name": {"type": "string", "example": "Garden Sensor"},
-                                    "location": {"type": "string", "example": "Backyard"}
-                                },
-                                "required": ["sensor_id", "sensor_name"]
-                            }
-                        }
-                    }
-                },
-                "responses": {"200": {"description": "Sensor added"}}
-            }
-        },
-        "/sensor/update/{sensor_id}": {
-            "put": {
-                "summary": "Update sensor details",
-                "parameters": [
-                    {"name": "sensor_id", "in": "path", "required": True, "schema": {"type": "integer"}}
-                ],
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "sensor_name": {"type": "string", "example": "Updated Sensor"},
-                                    "location": {"type": "string", "example": "Front Yard"},
-                                    "active": {"type": "boolean", "example": True}
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {"200": {"description": "Sensor updated"}}
-            }
-        },
-        "/sensors": {
-            "get": {
-                "summary": "Get all sensors",
-                "responses": {"200": {"description": "List of sensors"}}
-            }
-        },
-        "/data": {
-            "post": {
-                "summary": "Submit moisture reading",
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "sensor_id": {"type": "integer", "example": 1},
-                                    "moisture": {"type": "integer", "example": 450}
-                                },
-                                "required": ["sensor_id", "moisture"]
-                            }
-                        }
-                    }
-                },
-                "responses": {"200": {"description": "Reading recorded"}}
-            }
-        },
-        "/latest": {
-            "get": {
-                "summary": "Get latest moisture reading",
-                "parameters": [
-                    {"name": "sensor_id", "in": "query", "required": False, "schema": {"type": "integer"}}
-                ],
-                "responses": {"200": {"description": "Latest reading"}}
-            }
-        },
-        "/all": {
-            "get": {
-                "summary": "Get all moisture readings",
-                "parameters": [
-                    {"name": "sensor_id", "in": "query", "required": False, "schema": {"type": "integer"}}
-                ],
-                "responses": {"200": {"description": "All readings"}}
-            }
-        }
-    }
-}
-
+OPENAPI_DOC = { ... }  # Keep your existing OpenAPI definition here
 
 @app.route("/")
 def swagger_ui():
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Smart Irrigation API Docs</title>
-        <link rel="stylesheet"
-              href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">
-    </head>
-    <body>
-        <div id="swagger-ui"></div>
-        <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
-        <script>
-            SwaggerUIBundle({
-                url: '/openapi.json',
-                dom_id: '#swagger-ui',
-                presets: [
-                    SwaggerUIBundle.presets.apis,
-                    SwaggerUIBundle.SwaggerUIStandalonePreset
-                ],
-                layout: "BaseLayout"
-            });
-        </script>
-    </body>
-    </html>
-    """
-
+    return """ ... """  # Keep your existing Swagger UI HTML here
 
 @app.route("/openapi.json")
 def openapi_spec():
     return jsonify(OPENAPI_DOC)
 
-
 # --- Helpers ---
 def log_error(message):
     print("[ERROR]", message)
-
 
 def get_state(moisture):
     if moisture < DRY_THRESHOLD:
@@ -163,7 +40,6 @@ def get_state(moisture):
     elif moisture > WET_THRESHOLD:
         return "WET"
     return "MODERATE"
-
 
 # ---------------------------
 #       SENSOR ROUTES
@@ -197,7 +73,6 @@ def add_sensor():
         log_error(traceback.format_exc())
         return {"status": "Server error"}, 500
 
-
 @app.route('/sensor/update/<int:sensor_id>', methods=['PUT'])
 def update_sensor(sensor_id):
     try:
@@ -209,7 +84,6 @@ def update_sensor(sensor_id):
         log_error(traceback.format_exc())
         return {"status": "Server error"}, 500
 
-
 @app.route('/sensors', methods=['GET'])
 def get_sensors():
     try:
@@ -218,7 +92,6 @@ def get_sensors():
     except Exception:
         log_error(traceback.format_exc())
         return jsonify([])
-
 
 # ---------------------------
 #     MOISTURE ROUTES
@@ -250,7 +123,6 @@ def sensor_data():
         log_error(traceback.format_exc())
         return {"status": "Server error"}, 500
 
-
 @app.route('/latest', methods=['GET'])
 def latest_data():
     try:
@@ -264,7 +136,6 @@ def latest_data():
         log_error(traceback.format_exc())
         return jsonify({})
 
-
 @app.route('/all', methods=['GET'])
 def all_data():
     try:
@@ -277,7 +148,6 @@ def all_data():
     except Exception:
         log_error(traceback.format_exc())
         return jsonify([])
-
 
 # Local dev
 if __name__ == '__main__':
